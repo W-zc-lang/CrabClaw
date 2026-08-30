@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>本地 AI 对话</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- 侧边栏 -->
+    <aside id="sidebar">
+      <div class="side-head">
+        <div class="brand">
+          <span class="logo">AI</span>
+          <span class="brand-name">本地 AI 对话</span>
+        </div>
+        <button id="btn-new" class="btn-new" title="新建对话">＋</button>
+      </div>
+
+      <div class="model-mini" id="model-mini">模型：未选择</div>
+
+      <div id="session-list" class="session-list"></div>
+
+      <div class="side-foot">
+        <button id="btn-download" class="side-link">⬇ 下载模型</button>
+        <button id="btn-kb" class="side-link">📚 知识库</button>
+        <button id="btn-tools" class="side-link">🛠 文件工具</button>
+        <button id="btn-file-control" class="side-link">🖥 电脑文件</button>
+        <button id="btn-settings" class="side-link">⚙ 设置</button>
+        <button id="btn-data" class="side-link">📁 数据目录</button>
+        <button id="btn-donate" class="side-link">🥤 赞赏作者</button>
+        <div id="ollama-status" class="ollama-status">Ollama：检测中…</div>
+      </div>
+    </aside>
+
+    <!-- 主区 -->
+    <main id="main">
+      <div id="topbar">
+        <div id="session-title" class="session-title">新对话</div>
+        <div class="top-actions">
+          <select id="model-select" class="model-select" title="切换模型"></select>
+          <button id="btn-stop" class="btn-ghost hidden" title="停止生成">■ 停止</button>
+        </div>
+      </div>
+
+      <div id="banner" class="hidden"></div>
+
+      <div id="messages"></div>
+
+      <div id="input-area">
+        <div id="input-box">
+          <textarea id="input" rows="1" placeholder="发消息给本地 AI…（Enter 发送，Shift+Enter 换行）"></textarea>
+          <button id="btn-send" title="发送">➤</button>
+        </div>
+        <div class="input-hint">本地运行，数据不出本机 · 文件控制可在设置中关闭</div>
+      </div>
+    </main>
+  </div>
+
+  <!-- 下载模型弹窗 -->
+  <div id="download-modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-head">
+        <span>下载模型</span>
+        <button class="modal-close" data-close>✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-tip">首次使用先拉一个下来。数字越小越快，中文推荐 qwen2.5 系列。</p>
+        <div id="model-presets" class="model-presets"></div>
+        <div id="pull-progress" class="pull-progress hidden">
+          <div class="pull-name"></div>
+          <div class="pull-bar"><div class="pull-bar-fill"></div></div>
+          <div class="pull-meta"></div>
+          <button id="btn-cancel-pull" class="btn-small">取消下载</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 设置面板 -->
+  <div id="settings-panel" class="panel hidden">
+    <div class="panel-box">
+      <div class="panel-head">
+        <span>设置</span>
+        <button class="modal-close" data-close-panel>✕</button>
+      </div>
+      <div class="panel-body">
+        <div class="field">
+          <label>默认模型</label>
+          <select id="set-model"></select>
+        </div>
+        <div class="field">
+          <label>AI 人设（系统提示词）</label>
+          <textarea id="set-system" rows="4"></textarea>
+          <div class="hint">定义 AI 的身份、语气与行为准则。留空则用默认「小墨」。</div>
+        </div>
+        <div class="field">
+          <label>思考强度</label>
+          <select id="set-think">
+            <option value="0">关闭（直接回答）</option>
+            <option value="1">轻（先说思路再答）</option>
+            <option value="2">中（拆解 → 推导 → 结论）</option>
+            <option value="3">强（显式输出推导过程）</option>
+          </select>
+          <div class="hint">强度越高，回答越严谨、越慢。复杂问题建议中/强。</div>
+        </div>
+        <div class="field">
+          <label>温度 (temperature)：<b id="val-temp">0.7</b></label>
+          <input id="set-temp" type="range" min="0" max="2" step="0.05" value="0.7" />
+        </div>
+        <div class="field">
+          <label>Top-P：<b id="val-topp">0.9</b></label>
+          <input id="set-topp" type="range" min="0.1" max="1" step="0.05" value="0.9" />
+        </div>
+        <div class="field">
+          <label>上下文长度 (num_ctx)</label>
+          <input id="set-ctx" type="number" min="1024" max="32768" step="1024" value="8192" />
+        </div>
+        <div class="field">
+          <label>模型常驻时长 (keep_alive)</label>
+          <input id="set-keep" type="text" value="5m" />
+        </div>
+        <div class="field inline">
+          <input type="checkbox" id="set-bionic" />
+          <label for="set-bionic">Bionic Reading 效果（AI 回复中每个单词前半部分加粗，提升阅读速度）</label>
+        </div>
+        <div class="file-control">
+          <h4>🖥 电脑文件控制</h4>
+          <p>开启后，AI 可以帮你列出目录、读取文件、移动/重命名/删除文件，或执行白名单内的安全命令。所有写操作都需要你确认。</p>
+          <div class="field inline">
+            <input type="checkbox" id="set-file-control" />
+            <label for="set-file-control">允许 AI 控制电脑文件</label>
+          </div>
+          <div id="file-control-status" class="hint" style="color: var(--red); font-weight: 500;">当前状态：关闭</div>
+        </div>
+      </div>
+      <div class="settings-foot">
+        <button id="btn-reset-settings" class="btn btn-ghost">恢复默认</button>
+        <button id="btn-save-settings" class="btn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 知识库面板 -->
+  <div id="kb-panel" class="panel hidden">
+    <div class="panel-box">
+      <div class="panel-head">
+        <span>知识库</span>
+        <button class="modal-close" data-close-panel>✕</button>
+      </div>
+      <div class="panel-body">
+        <div class="field inline">
+          <input type="checkbox" id="kb-enable" />
+          <label for="kb-enable">回答时参考知识库</label>
+        </div>
+        <div class="kb-actions">
+          <button id="kb-pick" class="btn">选择文件导入</button>
+        </div>
+        <p class="hint">仅在本机索引，不上传。支持 txt/md/代码/pdf/docx（pdf/docx 需本机装有对应解析库）。</p>
+        <div id="kb-list" class="kb-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 文件工具面板 -->
+  <div id="tools-panel" class="panel hidden">
+    <div class="panel-box">
+      <div class="panel-head">
+        <span>文件工具</span>
+        <button class="modal-close" data-close-panel>✕</button>
+      </div>
+      <div class="panel-body tools-body">
+        <div class="tools-tabs">
+          <button class="tools-tab active" data-tab="sheet">表格分析</button>
+          <button class="tools-tab" data-tab="auto">文件整理</button>
+        </div>
+
+        <!-- 表格分析 -->
+        <section class="tools-section" data-section="sheet">
+          <button id="sheet-pick" class="btn">导入表格 (CSV / XLSX)</button>
+          <div id="sheet-info" class="sheet-info hidden"></div>
+          <div id="sheet-preview" class="sheet-preview hidden"></div>
+          <div id="sheet-ask" class="sheet-ask hidden">
+            <textarea id="sheet-q" rows="2" placeholder="针对这份表格提问，例如：哪一列缺失值最多？给我一个按部门汇总的 Excel 公式…"></textarea>
+            <button id="sheet-send" class="btn">分析</button>
+          </div>
+          <div id="sheet-result" class="sheet-result hidden"></div>
+        </section>
+
+        <!-- 文件整理 -->
+        <section class="tools-section hidden" data-section="auto">
+          <button id="auto-pick" class="btn">选择文件夹</button>
+          <div id="auto-path" class="auto-path"></div>
+          <div id="auto-summary" class="auto-summary hidden"></div>
+          <div id="auto-actions" class="auto-actions hidden">
+            <button id="auto-archive" class="btn-secondary">按类型归档</button>
+          </div>
+          <div class="auto-rename">
+            <h4>批量重命名</h4>
+            <select id="rename-mode">
+              <option value="sequence">序号模式（前缀 + 编号）</option>
+              <option value="replace">查找替换</option>
+            </select>
+            <div id="rename-seq" class="rename-params">
+              <input id="rename-prefix" placeholder="前缀，如 report" value="file" />
+              <input id="rename-ext" placeholder="仅限某扩展名(可选)，如 .pdf" />
+              <input id="rename-start" type="number" placeholder="起始序号" value="1" />
+            </div>
+            <div id="rename-rep" class="rename-params hidden">
+              <input id="rename-old" placeholder="查找内容" />
+              <input id="rename-new" placeholder="替换为" />
+            </div>
+            <button id="rename-preview" class="btn-secondary">预览</button>
+            <div id="rename-plan" class="rename-plan hidden"></div>
+            <button id="rename-apply" class="btn hidden">执行重命名</button>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- 文件控制面板 -->
+  <div id="file-control-panel" class="panel hidden">
+    <div class="panel-box">
+      <div class="panel-head">
+        <span>电脑文件控制</span>
+        <button class="modal-close" data-close-panel>✕</button>
+      </div>
+      <div class="panel-body">
+        <div id="file-control-disabled" class="file-control">
+          <h4>功能已关闭</h4>
+          <p>AI 暂时无法控制电脑文件。如需使用，请先在「设置 → 电脑文件控制」中开启，并阅读免责声明。</p>
+          <button id="btn-goto-file-settings" class="btn">去设置中开启</button>
+        </div>
+        <div id="file-control-enabled" class="hidden">
+          <p class="hint">在聊天中直接告诉 AI 你想做什么，例如：</p>
+          <ul class="hint" style="margin-top: -6px; margin-bottom: 16px;">
+            <li>帮我列出 C:\Users\win\WorkBuddy 下的文件</li>
+            <li>读取 D:\notes.txt 的内容</li>
+            <li>把下载目录里的所有 .zip 移到归档文件夹</li>
+          </ul>
+          <div class="file-control">
+            <h4>操作日志（最近 50 条）</h4>
+            <div id="file-control-log" class="disclaimer-box" style="background: var(--bg-2); border-color: var(--border); color: var(--muted); max-height: 240px;">暂无操作记录</div>
+            <button id="btn-clear-file-log" class="btn-ghost btn">清空日志</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 免责声明弹窗 -->
+  <div id="disclaimer-modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-head">
+        <span>免责声明</span>
+      </div>
+      <div class="modal-body">
+        <div class="disclaimer-body">
+          <h4>开启「电脑文件控制」前请仔细阅读</h4>
+          <p>本功能允许本地 AI 读取、移动、重命名、删除你电脑上的文件，以及执行白名单内的部分命令。使用该功能即表示你了解并接受以下风险：</p>
+          <ul>
+            <li><strong>数据丢失风险：</strong>删除或移动操作可能导致文件丢失，请务必在 AI 给出方案后核对再确认执行。</li>
+            <li><strong>路径限制：</strong>为安全起见，系统禁止访问 Windows 系统目录（如 C:\Windows、Program Files 等）。</li>
+            <li><strong>命令白名单：</strong>只允许执行 dir、ls、echo、python、git 等常见安全命令；任何可能格式化、删除大量文件、修改注册表或关机的命令都会被拒绝。</li>
+            <li><strong>本地运行：</strong>所有操作仅在你本机执行，不会上传到云端；但 AI 的输出仍由你本人负责。</li>
+            <li><strong>作者免责：</strong>因误操作、AI 理解错误或用户确认后执行所造成的任何数据损失，本软件及作者不承担责任。</li>
+          </ul>
+          <p>建议：重要文件请先备份；不确定的操作先让 AI 只给出方案，不要立即执行。</p>
+        </div>
+        <label class="disclaimer-check">
+          <input type="checkbox" id="disclaimer-agree" />
+          <span>我已阅读并理解上述风险，自愿开启此功能。</span>
+        </label>
+      </div>
+      <div class="settings-foot">
+        <button id="btn-disclaimer-cancel" class="btn btn-ghost">取消</button>
+        <button id="btn-disclaimer-confirm" class="btn" disabled>确认开启</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 文件操作确认弹窗 -->
+  <div id="file-op-modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-head">
+        <span>确认执行文件操作</span>
+        <button class="modal-close" data-close>✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-tip">AI 请求执行以下操作，请核对路径与影响范围：</p>
+        <pre id="file-op-preview" class="file-op-preview"></pre>
+      </div>
+      <div class="settings-foot">
+        <button id="btn-file-op-cancel" class="btn btn-ghost">取消</button>
+        <button id="btn-file-op-confirm" class="btn btn-danger">确认执行</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 赞赏码弹窗 -->
+  <div id="donate-modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-head">
+        <span>赞赏作者</span>
+        <button class="modal-close" data-close>✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="donate-card">
+          <img id="donate-img" src="donate.jpg" alt="赞赏码" />
+          <p>如果这个小工具帮到了你，可以请作者喝杯奶茶 🥤</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 文档摘要弹层 -->
+  <div id="summary-modal" class="modal hidden">
+    <div class="modal-box">
+      <div class="modal-head">
+        <span>文档摘要</span>
+        <button class="modal-close" data-close>✕</button>
+      </div>
+      <div id="summary-body" class="summary-body"></div>
+    </div>
+  </div>
+
+  <script src="markdown.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+pywebview>=6.0
+PyInstaller>=6.0
+
+# 办公能力可选依赖（不装也能跑，只是不能解析对应格式）
+openpyxl>=3.1      # 读取 xlsx 表格 / 知识库导入 xlsx
+python-docx>=1.1   # 知识库导入 docx
+pypdf>=4.0         # 知识库导入 pdf
