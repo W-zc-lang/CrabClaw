@@ -528,6 +528,132 @@ class Api:
         return {"ok": True}
 
     # ------------------------------------------------------------ 模型管理
+    def scan_hardware(self) -> dict[str, Any]:
+        """扫描本机配置，返回规格信息并据此推荐适配的模型。
+
+        读取：设备型号、CPU、物理内存、显卡与显存、系统盘剩余空间。
+        所有外部命令都带超时，任一失败不影响其余字段（用默认值兜底）。
+        """
+        import shutil
+
+        specs: dict[str, Any] = {
+            "os": "",
+            "computer_model": "",
+            "cpu": "",
+            "ram_gb": 0,
+            "gpu": "",
+            "gpu_vram_gb": 0,
+            "disk_free_gb": 0,
+        }
+        try:
+            import platform
+
+            specs["os"] = f"{platform.system()} {platform.release()} ({platform.machine()})"
+        except Exception:  # noqa: BLE001
+            pass
+
+        def ps(query: str) -> str:
+            try:
+                out = subprocess.run(
+                    ["powershell", "-NoProfile", "-NonInteractive", "-Command", query],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    creationflags=0x08000000,  # CREATE_NO_WINDOW
+                )
+                return (out.stdout or out.stderr or "").strip()
+            except Exception:  # noqa: BLE001
+                return ""
+
+        if sys.platform == "win32":
+            specs["computer_model"] = ps(
+                "(Get-CimInstance Win32_ComputerSystem).Manufacturer + ' ' + "
+                "(Get-CimInstance Win32_ComputerSystem).Model"
+            )
+            specs["cpu"] = ps("(Get-CimInstance Win32_Processor).Name")
+            ram_s = ps(
+                "[math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory/1GB)"
+            )
+            try:
+                specs["ram_gb"] = int(float(ram_s))
+            except (ValueError, TypeError):
+                pass
+            gpu_raw = ps(
+                "(Get-CimInstance Win32_VideoController | Where-Object {$_.AdapterRAM -gt 0} | "
+                "ForEach-Object { ($_.Name -replace '\\|','/') + '|' + "
+                "[math]::Round($_.AdapterRAM/1GB) }) -join ';'"
+            )
+            if gpu_raw:
+                gpus: list[str] = []
+                best_vram = 0
+                for part in gpu_raw.split(";"):
+                    part = part.strip()
+                    if not part:
+                        continue
+                    if "|" in part:
+                        name, v = part.split("|", 1)
+                        gpus.append(name.strip())
+                        try:
+                            best_vram = max(best_vram, int(float(v)))
+                        except (ValueError, TypeError):
+                            pass
+                    else:
+                        gpus.append(part)
+                specs["gpu"] = "; ".join(gpus)
+                specs["gpu_vram_gb"] = best_vram
+            try:
+                drive = os.environ.get("SystemDrive", "C:\\")
+                free = shutil.disk_usage(drive)
+                specs["disk_free_gb"] = int(free.free / (1024**3))
+            except Exception:  # noqa: BLE001
+                pass
+        else:
+            try:
+                import platform as _pf
+
+                specs["cpu"] = _pf.processor() or ""
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                free = shutil.disk_usage("/")
+                specs["disk_free_gb"] = int(free.free / (1024**3))
+            except Exception:  # noqa: BLE001
+                pass
+
+        recommended = self._recommend_by_specs(specs)
+        return {"ok": True, "specs": specs, "recommended": recommended}
+
+    @staticmethod
+    def _recommend_by_specs(specs: dict[str, Any]) -> list[dict[str, Any]]:
+        """根据内存/显存选 3 个适配档位，其余模型作为「其他可选」。"""
+        ram = int(specs.get("ram_gb", 0) or 0)
+        vram = int(specs.get("gpu_vram_gb", 0) or 0)
+        by_name = {m["name"]: m for m in ollama.RECOMMENDED_MODELS}
+
+        if vram >= 8 or ram >= 32:
+            tier = ["qwen2.5:14b", "qwen2.5:7b", "qwen2.5:3b"]
+            note = "高配：可流畅运行 7B~14B"
+        elif vram >= 4 or ram >= 16:
+            tier = ["qwen2.5:7b", "qwen2.5:3b", "qwen2.5:1.5b"]
+            note = "中高配：7B 流畅，14B 偏慢"
+        elif ram >= 8:
+            tier = ["qwen2.5:3b", "qwen2.5:1.5b", "qwen2.5:0.5b"]
+            note = "主流配置：3B 均衡，7B 偏慢"
+        else:
+            tier = ["qwen2.5:1.5b", "qwen2.5:0.5b"]
+            note = "低配：建议 1.5B 及以下"
+
+        recs: list[dict[str, Any]] = []
+        for name in tier:
+            m = by_name.get(name)
+            if m:
+                recs.append({**m, "recommended": True, "match_note": note})
+        rec_names = {r["name"] for r in recs}
+        for m in ollama.RECOMMENDED_MODELS:
+            if m["name"] not in rec_names:
+                recs.append({**m, "recommended": False, "match_note": ""})
+        return recs
+
     def pull_model(self, name: str) -> dict[str, Any]:
         if not name:
             return {"ok": False, "error": "模型名为空"}

@@ -32,6 +32,11 @@ class OllamaUnavailable(OllamaError):
 # --------------------------------------------------------------------------
 RECOMMENDED_MODELS: list[dict[str, str]] = [
     {
+        "name": "qwen2.5:0.5b",
+        "size": "~0.4 GB",
+        "desc": "最轻量，老年机/低内存也能跑；质量一般",
+    },
+    {
         "name": "qwen2.5:1.5b",
         "size": "~1.0 GB",
         "desc": "极快，纯 CPU 也能秒回；适合简单问答、草稿",

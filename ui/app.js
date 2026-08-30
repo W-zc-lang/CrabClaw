@@ -157,14 +157,25 @@
     if (msgId != null) wrap.dataset.msgId = msgId;
 
     const av = document.createElement("div");
-    av.className = "avatar";
+    av.className = "avatar " + role;
     av.textContent = role === "user" ? "你" : "AI";
     wrap.appendChild(av);
 
+    const inner = document.createElement("div");
+    inner.className = "bubble-wrap";
+
+    const meta = document.createElement("div");
+    meta.className = "bubble-meta";
+    meta.innerHTML =
+      '<span class="who">' + (role === "user" ? "你" : "AI 助手") + "</span>";
+    inner.appendChild(meta);
+
     const bubble = document.createElement("div");
-    bubble.className = "bubble" + (streaming ? " streaming" : "");
+    bubble.className = "bubble " + role + (streaming ? " streaming" : "");
     if (text) bubble.innerHTML = MD.render(text);
-    wrap.appendChild(bubble);
+    inner.appendChild(bubble);
+
+    wrap.appendChild(inner);
     $("#messages").appendChild(wrap);
     return wrap;
   }
@@ -205,6 +216,7 @@
   function finalizeBubble(msgId, stats) {
     const el = getBubble(msgId);
     if (!el) return;
+    const inner = el.querySelector(".bubble-wrap") || el;
     const bubble = el.querySelector(".bubble");
     bubble.classList.remove("streaming");
     const raw = state.buffers[msgId] || "";
@@ -219,7 +231,7 @@
       const foot = document.createElement("div");
       foot.className = "stats";
       foot.textContent = s.join(" · ");
-      el.appendChild(foot);
+      inner.appendChild(foot);
     }
     // 操作按钮
     const actions = document.createElement("div");
@@ -228,7 +240,7 @@
     regen.textContent = "重新生成";
     regen.onclick = () => regenerate(msgId);
     actions.appendChild(regen);
-    el.appendChild(actions);
+    inner.appendChild(actions);
 
     // 知识库来源
     const src = state.kbSources[msgId];
@@ -244,7 +256,7 @@
         chip.textContent = name;
         sd.appendChild(chip);
       });
-      el.appendChild(sd);
+      inner.appendChild(sd);
     }
   }
 
@@ -253,6 +265,7 @@
     box.innerHTML = "";
     messages.forEach((m) => {
       const el = addBubble(m.role, m.content, m.id, false);
+      const inner = el.querySelector(".bubble-wrap") || el;
       if (m.role === "assistant" && state.bionicEnabled) {
         const bubble = el.querySelector(".bubble");
         if (bubble) applyBionicToElement(bubble);
@@ -264,14 +277,14 @@
         if (m.stats.tokens) s.push(m.stats.tokens + " tokens");
         if (m.stats.tps) s.push(m.stats.tps + " 字/秒");
         foot.textContent = s.join(" · ");
-        el.appendChild(foot);
+        inner.appendChild(foot);
         const actions = document.createElement("div");
         actions.className = "actions";
         const regen = document.createElement("button");
         regen.textContent = "重新生成";
         regen.onclick = () => regenerate(m.id);
         actions.appendChild(regen);
-        el.appendChild(actions);
+        inner.appendChild(actions);
       }
     });
     scrollBottom();
@@ -636,23 +649,93 @@
   }
 
   // ---------- 下载模型 ----------
-  function openDownload() {
+  async function openDownload() {
     if (!state.ollamaRunning) {
       showBanner("Ollama 还没启动，先点「启动 Ollama」。", true);
       return;
     }
     const box = $("#model-presets");
     box.innerHTML = "";
-    (window.__RECOMMENDED || []).forEach((m) => {
+    const specsEl = $("#hw-specs");
+    specsEl.className = "hw-specs";
+    specsEl.innerHTML = '<div class="hw-scanning">正在扫描你的电脑配置…</div>';
+    $("#download-modal").classList.remove("hidden");
+
+    let hw = null;
+    try {
+      hw = await api().scan_hardware();
+    } catch (e) {
+      hw = null;
+    }
+    if (hw && hw.ok) {
+      renderHardware(hw);
+    } else {
+      // 扫描失败则回退到默认推荐列表
+      renderHardware({
+        ok: true,
+        specs: null,
+        recommended: window.__RECOMMENDED || [],
+      });
+    }
+  }
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(
+      /[&<>"']/g,
+      (c) =>
+        ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])
+    );
+  }
+
+  function renderHardware(hw) {
+    const specsEl = $("#hw-specs");
+    const spec = hw.specs;
+    if (spec) {
+      const rows = [];
+      if (spec.computer_model) rows.push(["设备型号", spec.computer_model]);
+      if (spec.cpu) rows.push(["处理器", spec.cpu]);
+      if (spec.ram_gb) rows.push(["内存", spec.ram_gb + " GB"]);
+      if (spec.gpu)
+        rows.push([
+          "显卡",
+          spec.gpu + (spec.gpu_vram_gb ? "（约 " + spec.gpu_vram_gb + " GB 显存）" : ""),
+        ]);
+      if (spec.os) rows.push(["系统", spec.os]);
+      if (spec.disk_free_gb) rows.push(["系统盘剩余", spec.disk_free_gb + " GB"]);
+      let html =
+        '<div class="hw-card"><div class="hw-title">已扫描你的电脑</div><div class="hw-grid">';
+      rows.forEach(([k, v]) => {
+        html +=
+          '<div class="hw-row"><span class="hw-k">' +
+          esc(k) +
+          '</span><span class="hw-v">' +
+          esc(v) +
+          "</span></div>";
+      });
+      html += "</div></div>";
+      specsEl.innerHTML = html;
+    } else {
+      specsEl.innerHTML = '<div class="hw-card"><div class="hw-title">推荐模型</div></div>';
+    }
+    specsEl.classList.remove("hidden");
+
+    const box = $("#model-presets");
+    box.innerHTML = "";
+    (hw.recommended || []).forEach((m) => {
       const el = document.createElement("div");
-      el.className = "preset";
+      el.className = "preset" + (m.recommended ? " preset-rec" : "");
+      const badge = m.recommended
+        ? '<span class="rec-badge">推荐 · 适配你的电脑</span>'
+        : "";
       el.innerHTML =
         '<div class="preset-info"><div class="preset-name">' +
-        m.name +
+        esc(m.name) +
+        " " +
+        badge +
         '</div><div class="preset-meta">' +
-        m.size +
-        " · " +
-        m.desc +
+        (m.size || "") +
+        (m.size && m.desc ? " · " : "") +
+        (m.desc || "") +
         "</div></div>";
       const btn = document.createElement("button");
       btn.textContent = "下载";
@@ -660,7 +743,6 @@
       el.appendChild(btn);
       box.appendChild(el);
     });
-    $("#download-modal").classList.remove("hidden");
   }
 
   async function pullModel(name, btn) {

@@ -101,6 +101,16 @@ html, body {
 }
 .message { display: flex; gap: 12px; margin-bottom: 22px; animation: fadeIn .25s ease; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+/* 用户/助手消息布局（与 .message 同款 flex，并区分左右与配色） */
+.msg { display: flex; gap: 12px; margin-bottom: 22px; animation: fadeIn .25s ease; align-items: flex-start; }
+.msg.user { flex-direction: row-reverse; }
+.msg.user .bubble-wrap { display: flex; flex-direction: column; align-items: flex-end; }
+.msg.user .bubble-meta { justify-content: flex-end; }
+.msg .bubble-meta .who { font-weight: 600; color: var(--text); }
+.msg.user .bubble-meta .who { color: var(--accent); }
+.msg.assistant .bubble-meta .who { color: #db2777; }
+
 .avatar {
   width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
   display: grid; place-items: center; font-size: 13px; font-weight: 700; color: #fff;
@@ -264,6 +274,23 @@ html, body {
   padding: 6px 14px; font-size: 13px; cursor: pointer;
 }
 .preset button:hover { background: var(--accent-2); }
+.preset-rec { border-color: var(--accent); background: #f5f8ff; }
+.rec-badge {
+  display: inline-block; margin-left: 8px; font-size: 11px; font-weight: 600;
+  color: #fff; background: var(--accent); border-radius: 6px; padding: 2px 8px;
+  vertical-align: middle;
+}
+
+/* 硬件扫描信息卡 */
+.hw-specs { margin-bottom: 16px; }
+.hw-card { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+.hw-title { font-weight: 600; margin-bottom: 10px; color: var(--text); }
+.hw-grid { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; }
+.hw-row { display: contents; }
+.hw-k { color: var(--muted); font-size: 13px; white-space: nowrap; }
+.hw-v { font-size: 13px; color: var(--text); word-break: break-word; }
+.hw-scanning { color: var(--muted); font-size: 13px; padding: 8px 0; }
+
 .pull-progress { padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-2); }
 .pull-progress.hidden { display: none; }
 .pull-name { font-weight: 500; margin-bottom: 8px; }
