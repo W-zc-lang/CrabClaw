@@ -64,17 +64,17 @@ def _home() -> str:
 
 
 def _safe_path_check(path: str | None) -> None:
-    """检查路径是否在允许范围内。path 为 None 时跳过（用于初始化日志等）。"""
+    r"""检查路径是否在允许范围内。path 为 None 时跳过（用于初始化日志等）。
+
+    只允许非系统目录。Windows 下限制 C:\Windows、Program Files 等；
+    Unix 下限制 /System、/usr/bin 等系统路径。不限制用户主目录之外的其他数据盘。
+    """
     if path is None:
         return
     abs_path = os.path.abspath(path)
     for prefix in FORBIDDEN_PREFIXES:
         if abs_path.lower().startswith(prefix.lower()):
             raise PermissionError(f"禁止访问系统目录：{abs_path}")
-    home = os.path.abspath(_home())
-    # Windows 下允许访问用户主目录及其子目录；Unix 同理
-    if not abs_path.lower().startswith(home.lower()):
-        raise PermissionError(f"只能访问用户主目录内的路径：{abs_path}")
 
 
 def _log(message: str) -> None:
