@@ -439,11 +439,18 @@ class Api:
     @staticmethod
     def _find_ollama_exe() -> str | None:
         candidates: list[str] = []
-        # 1) 打包内置（onedir 模式会放在程序目录）
+        # 1) 打包内置
         if getattr(sys, "frozen", False):
-            exe_in_app = os.path.join(Api._app_dir(), "ollama.exe")
-            if os.path.isfile(exe_in_app):
-                candidates.append(exe_in_app)
+            app = Api._app_dir()
+            # onedir 模式下二进制落在程序目录下的 _internal；onefile 则在 _MEIPASS
+            meipass = getattr(sys, "_MEIPASS", "")
+            for cand in (
+                os.path.join(app, "ollama.exe"),
+                os.path.join(app, "_internal", "ollama.exe"),
+                os.path.join(meipass, "ollama.exe") if meipass else "",
+            ):
+                if cand and os.path.isfile(cand):
+                    candidates.append(cand)
         else:
             # 源码调试时若把 ollama.exe 放到项目目录也能用
             local = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ollama.exe")

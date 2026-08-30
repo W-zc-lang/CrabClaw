@@ -19,10 +19,17 @@
 import os
 import shutil
 import sys
+import tempfile
 
 import PyInstaller.__main__
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+# 把构建中间产物与最终输出都放到系统临时目录。这样 PyInstaller 内部的
+# os.remove / rmtree 调用落在临时目录下，在某些受限环境（回收站/trash 不可用）
+# 里不会被「安全删除」拦截而导致打包失败。构建完成后由调用方把成品拷回 dist/。
+_WORK = os.path.join(tempfile.gettempdir(), "laic_build")
+_DIST = os.path.join(tempfile.gettempdir(), "laic_dist")
 
 
 def find_ollama_exe() -> str | None:
@@ -63,6 +70,10 @@ def main() -> None:
         "--noconfirm",
         "--clean",
         "--windowed",  # 无控制台窗口
+        "--workpath",
+        _WORK,
+        "--distpath",
+        _DIST,
         "--add-data",
         "ui;ui",  # Windows 用分号；macOS/Linux 换成 ui:ui
         # 注意：dest 用 "." 让文件直接落到 _internal 根并保持原名；
