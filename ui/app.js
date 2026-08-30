@@ -386,6 +386,29 @@
       case "file_op_request":
         onFileOpRequest(ev);
         break;
+      case "doc_summary":
+        if (_summaryBtn) { _summaryBtn.disabled = false; _summaryBtn = null; }
+        if (ev.error) {
+          hideBanner();
+          showBanner("摘要失败：" + (ev.error || ""));
+        } else {
+          hideBanner();
+          $("#summary-body").innerHTML = MD.render(ev.summary || "（空）");
+          $("#summary-modal").classList.remove("hidden");
+        }
+        break;
+      case "file_op_done":
+        hideBanner();
+        if (!ev.result || !ev.result.ok) {
+          const err = (ev.result && ev.result.error) || "未知错误";
+          showBanner("文件操作失败：" + err);
+          addSystemMessage("文件操作失败：" + err, true);
+        } else {
+          const msg = ev.result.message || "操作已完成";
+          addSystemMessage("文件操作成功：" + msg, false);
+          renderFileControlLog();
+        }
+        break;
     }
   };
 
@@ -478,16 +501,13 @@
 
   // ---------- Ollama ----------
   async function startOllama() {
-    showBanner("正在尝试启动 Ollama…");
+    showBanner("正在启动 Ollama，请稍候…（首次可能需要十几秒）");
     const r = await api().start_ollama();
-    if (r.ok) {
-      hideBanner();
-      state.ollamaRunning = true;
-      setOllamaStatus(true, r.ollama_version);
-      renderModels(r.models);
-    } else {
+    if (!r.ok) {
       showBanner(r.error || "启动失败");
     }
+    // 启动结果（版本 / 模型列表）由后台线程通过 ollama_status 事件推送，
+    // 这里不依赖返回值，主线程立即返回，窗口不会卡死。
   }
 
   function setOllamaStatus(ok, version) {
@@ -501,6 +521,7 @@
   function onOllamaStatus(ev) {
     state.ollamaRunning = ev.running;
     setOllamaStatus(ev.running, ev.version);
+    if (ev.running) hideBanner();
     if (ev.models) {
       renderModels(ev.models);
     }
@@ -526,21 +547,16 @@
   async function confirmFileOp() {
     if (!state.pendingFileOp) return;
     const { op, args, session_id } = state.pendingFileOp;
+    state._fileOpPending = { op, args, session_id };
     $("#file-op-modal").classList.add("hidden");
     state.pendingFileOp = null;
     showBanner("正在执行文件操作…", false);
     const r = await api().apply_file_op(session_id, op, args);
-    hideBanner();
-    if (!r.ok || !r.result || !r.result.ok) {
-      const err = (r.result && r.result.error) || r.error || "未知错误";
-      showBanner("文件操作失败：" + err);
-      addSystemMessage("文件操作失败：" + err, true);
-    } else {
-      const msg = r.result.message || "操作已完成";
-      addSystemMessage("文件操作成功：" + msg, false);
-      // 如果文件控制面板开着，刷新日志
-      renderFileControlLog();
+    if (!r.ok) {
+      hideBanner();
+      showBanner("文件操作失败：" + (r.error || "未知错误"));
     }
+    // 结果通过 file_op_done 事件异步返回，这里不阻塞等待
   }
 
   function cancelFileOp() {
@@ -955,16 +971,18 @@
   }
 
   // ---------- 文档摘要 ----------
+  let _summaryBtn = null;
   async function summarizeDoc(docId, btn) {
-    if (btn) btn.disabled = true;
+    _summaryBtn = btn || null;
+    if (_summaryBtn) _summaryBtn.disabled = true;
+    showBanner("正在生成摘要…", false);
     const r = await api().summarize_document(docId);
-    if (btn) btn.disabled = false;
     if (!r.ok) {
+      if (_summaryBtn) { _summaryBtn.disabled = false; _summaryBtn = null; }
+      hideBanner();
       showBanner("摘要失败：" + (r.error || ""));
-      return;
     }
-    $("#summary-body").innerHTML = MD.render(r.summary || "（空）");
-    $("#summary-modal").classList.remove("hidden");
+    // 成功时结果通过 doc_summary 事件异步返回，这里不阻塞等待
   }
 
   function basename(p) {

@@ -239,22 +239,12 @@ class Api:
         threading.Thread(target=self._refresh_ollama_worker, daemon=True).start()
         return {"ok": True, "started": True}
 
-    def start_ollama(self) -> dict[str, Any]:
-        """Ollama 没启动时，尝试在本机直接拉起来。
-
-        优先用打包内置的 ollama.exe，并把模型目录指到程序目录下的
-        models/，让 AI 真正「内置」在软件里。
-        """
-        if ollama.is_running():
-            return self.refresh_models()
-        exe = self._find_ollama_exe()
-        if not exe:
-            return {
-                "ok": False,
-                "error": "没找到 ollama.exe。请先去 https://ollama.com 安装，"
-                "或把 ollama.exe 放到本程序所在目录。",
-            }
-        # 内置 ollama：模型存到程序目录下的 models，做到离线可用
+    # --------------------------------------------------------------------------
+    # Ollama 启动：主线程必须「立即返回」，否则 time.sleep 轮询会把 GUI 消息循环
+    # 饿死，窗口被 Windows 标为「未响应」。真正的拉起 + 就绪检测放到后台线程。
+    # --------------------------------------------------------------------------
+    def _launch_ollama_process(self, exe: str) -> bool:
+        """拉起 ollama serve 子进程（只启动，不等就绪）。成功返回 True。"""
         env = None
         if self._is_bundled_ollama(exe):
             models_dir = os.path.join(self._app_dir(), "models")
@@ -281,16 +271,51 @@ class Api:
                     start_new_session=True,
                     env=env,
                 )
-        except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": f"启动失败：{exc}"}
+            return True
+        except Exception:  # noqa: BLE001
+            return False
 
-        # 最多等 15 秒，每 0.5 秒探一次
-        for _ in range(30):
+    def _wait_ollama_ready(self, timeout: float = 30.0) -> bool:
+        """轮询 Ollama 是否就绪（在后台线程调用，不阻塞 GUI 主线程）。"""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
             time.sleep(0.5)
             if ollama.is_running():
                 time.sleep(1.0)  # 给 /api/tags 一点热身时间
-                return self.refresh_models()
-        return {"ok": False, "error": "已尝试启动，但 15 秒内没连上。"}
+                return True
+        return False
+
+    def start_ollama(self) -> dict[str, Any]:
+        """JS API：异步启动 Ollama。主线程立即返回，拉起与就绪检测在后台线程完成。
+
+        启动结果通过 ollama_status 事件推给前端（onOllamaStatus 已处理），
+        因此这个方法本身不能做任何同步等待。
+        """
+        if ollama.is_running():
+            # 已经在跑，直接后台刷新一次模型列表并返回
+            threading.Thread(target=self._refresh_ollama_worker, daemon=True).start()
+            return {"ok": True, "started": True}
+        exe = self._find_ollama_exe()
+        if not exe:
+            return {
+                "ok": False,
+                "error": "没找到 ollama.exe。请先去 https://ollama.com 安装，"
+                "或把 ollama.exe 放到本程序所在目录。",
+            }
+        # 后台真正去拉起并等待就绪，主线程立刻返回，避免窗口「未响应」
+        threading.Thread(target=self._start_ollama_worker, args=(exe,), daemon=True).start()
+        return {"ok": True, "started": True}
+
+    def _start_ollama_worker(self, exe: str) -> None:
+        """后台线程：拉起 ollama serve，轮询就绪后刷新模型并推事件给前端。"""
+        if not self._launch_ollama_process(exe):
+            self._push({"type": "model_error", "message": "启动 Ollama 失败，请检查 ollama.exe 是否完整。"})
+            return
+        if self._wait_ollama_ready():
+            # 就绪：刷新模型列表与版本，事件会驱动前端更新状态
+            self._refresh_ollama_worker()
+        else:
+            self._push({"type": "model_error", "message": "已尝试启动 Ollama，但 30 秒内没连上。"})
 
     def ensure_model(self) -> dict[str, Any]:
         """后台确保内置模型 local-assistant 存在：缺失则自动拉基础模型并创建。"""
@@ -305,9 +330,15 @@ class Api:
         self._pull_cancel.clear()
         try:
             if not ollama.is_running():
-                r = self.start_ollama()
-                if not r.get("ok") or not ollama.is_running():
-                    self._push({"type": "model_error", "message": (r or {}).get("error", "Ollama 启动失败")})
+                exe = self._find_ollama_exe()
+                if not exe:
+                    self._push({"type": "model_error", "message": "没找到 ollama.exe，无法准备内置模型。请先安装 Ollama。"})
+                    return
+                if not self._launch_ollama_process(exe):
+                    self._push({"type": "model_error", "message": "启动 Ollama 失败。"})
+                    return
+                if not self._wait_ollama_ready():
+                    self._push({"type": "model_error", "message": "已尝试启动 Ollama，但 30 秒内没连上。"})
                     return
             models = ollama.list_models()
             names = [m["name"] for m in models]
@@ -892,17 +923,27 @@ class Api:
 
     # ------------------------------------------------------------ 文档摘要
     def summarize_document(self, doc_id: int) -> dict[str, Any]:
-        """一次性生成某文档的中文摘要（非流式，直接返回文本）。"""
+        """JS API：后台生成某文档的中文摘要，结果通过 doc_summary 事件推送。
+
+        不能直接在主线程跑 chat_stream，否则整段推理期间窗口「未响应」。
+        """
+        threading.Thread(target=self._summarize_worker, args=(int(doc_id),), daemon=True).start()
+        return {"ok": True, "started": True}
+
+    def _summarize_worker(self, doc_id: int) -> None:
         try:
-            text = self.knowledge.get_document_text(int(doc_id))
+            text = self.knowledge.get_document_text(doc_id)
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": f"读取文档失败：{exc}"}
+            self._push({"type": "doc_summary", "doc_id": doc_id, "error": f"读取文档失败：{exc}"})
+            return
         if not text.strip():
-            return {"ok": False, "error": "文档内容为空"}
+            self._push({"type": "doc_summary", "doc_id": doc_id, "error": "文档内容为空"})
+            return
         text = text[:6000]
         model = self._model_name()
         if not model:
-            return {"ok": False, "error": "请先在左上角选择模型"}
+            self._push({"type": "doc_summary", "doc_id": doc_id, "error": "请先在左上角选择模型"})
+            return
         try:
             messages = [
                 {
@@ -922,8 +963,9 @@ class Api:
                 parts.append(ch)
             summary = "".join(parts)
         except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": f"生成摘要失败：{exc}"}
-        return {"ok": True, "summary": summary}
+            self._push({"type": "doc_summary", "doc_id": doc_id, "error": f"生成摘要失败：{exc}"})
+            return
+        self._push({"type": "doc_summary", "doc_id": doc_id, "summary": summary})
 
     # ------------------------------------------------------------ 表格分析
     def import_sheet_dialog(self) -> dict[str, Any]:
@@ -1127,13 +1169,28 @@ class Api:
         return {"ok": True, "settings": self._settings()}
 
     def apply_file_op(self, session_id: str, op: str, args: dict[str, Any]) -> dict[str, Any]:
-        """执行文件操作。只有开启文件控制并同意免责声明后才允许。"""
+        """JS API：后台执行文件操作。主线程立即返回，结果通过 file_op_done 事件推送。
+
+        subprocess 可能跑几秒（尤其是 execute_command 执行 python），必须在后台线程，
+        否则用户点「确认」后界面会卡住。
+        """
         s = self._settings()
         if not s.get("file_control_enabled"):
             return {"ok": False, "error": "文件控制功能未开启"}
         if not s.get("file_control_disclaimer_accepted"):
             return {"ok": False, "error": "请先同意免责声明"}
-        result = file_agent.apply_operation(op, args)
+        threading.Thread(
+            target=self._apply_file_op_worker,
+            args=(session_id, op, args),
+            daemon=True,
+        ).start()
+        return {"ok": True, "started": True}
+
+    def _apply_file_op_worker(self, session_id: str, op: str, args: dict[str, Any]) -> None:
+        try:
+            result = file_agent.apply_operation(op, args)
+        except Exception as exc:  # noqa: BLE001
+            result = {"ok": False, "error": f"执行失败：{exc}"}
 
         # 把操作结果作为 system 消息追加到当前会话，便于后续上下文理解
         try:
@@ -1143,7 +1200,7 @@ class Api:
         except Exception:  # noqa: BLE001
             pass
 
-        return {"ok": True, "result": result, "settings": self._settings()}
+        self._push({"type": "file_op_done", "result": result, "settings": self._settings()})
 
     def clear_file_control_log(self) -> dict[str, Any]:
         log_file = os.path.join(data_dir(), "logs", "file_agent.log")
