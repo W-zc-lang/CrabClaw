@@ -18,7 +18,7 @@ LocalAIChat 是一款基于 pywebview + Ollama 的桌面端 AI 对话工具，�
 - **多会话历史**：自动命名、重新生成、停止生成。
 
 ### 下载地址
-GitHub Releases：https://github.com/W-zc-lang/local-ai-chat/releases/tag/v1.0.1
+GitHub Releases：https://github.com/W-zc-lang/local-ai-chat/releases/tag/v1.0.2
 
 ### 使用方式
 1. 从 GitHub Release 下载 `LocalAIChat.zip` 并解压。
