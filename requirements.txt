@@ -1,0 +1,7 @@
+pywebview>=6.2
+requests>=2.25
+mss>=9.0
+pyautogui>=0.9
+psutil>=5.8
+Pillow>=9.0
+pyinstaller>=6.0

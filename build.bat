@@ -14,7 +14,15 @@ if exist ".venv\Scripts\python.exe" (
     set "PY=python"
 )
 
-REM 2) 构建 exe
+REM 2) 安装依赖（防止漏装 requests 等模块导致打包后启动崩溃）
+echo 正在检查/安装依赖（requirements.txt）...
+%PY% -m pip install -r requirements.txt
+if errorlevel 1 (
+    echo [错误] 依赖安装失败，请检查网络或 Python 环境。
+    exit /b 1
+)
+
+REM 3) 构建 exe
 REM    说明：不使用 --clean（部分环境的安全删除策略会拦截），改用固定 workpath/distpath
 if not exist build mkdir build
 %PY% -m PyInstaller CrabClaw.spec --workpath build --distpath dist --noconfirm
@@ -23,7 +31,7 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM 3) 构建安装包（自动查找 NSIS 的 makensis.exe）
+REM 4) 构建安装包（自动查找 NSIS 的 makensis.exe）
 set "MAKENSIS="
 if exist "%ProgramFiles%\NSIS\makensis.exe"      set "MAKENSIS=%ProgramFiles%\NSIS\makensis.exe"
 if exist "%ProgramFiles(x86)%\NSIS\makensis.exe" set "MAKENSIS=%ProgramFiles(x86)%\NSIS\makensis.exe"
