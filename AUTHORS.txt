@@ -1,0 +1,10 @@
+小螃蟹 CrabClaw
+本地 Ollama Agent 助手
+
+作者：W-zc-lang（则成吴）
+GitHub：https://github.com/W-zc-lang
+爱发电：https://ifdian.net/a/wzc114514
+
+本软件为 W-zc-lang（则成吴）独立开发并持有著作权。
+未经许可，禁止以任何形式进行商业销售或二次分发。
+本软件按“原样”提供，作者不对使用过程中产生的任何数据丢失或系统问题负责。
