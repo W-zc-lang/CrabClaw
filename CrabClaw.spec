@@ -64,4 +64,5 @@ exe = EXE(
     onefile=True,
     windowed=True,
     icon='icon.ico',
+    version='version_info.txt',
 )

@@ -3,7 +3,7 @@
 ;   makensis.exe CrabClaw.nsi
 
 !define APP_NAME "CrabClaw"
-!define APP_VERSION "1.0.8"
+!define APP_VERSION "1.0.9"
 !define APP_PUBLISHER "W-zc-lang（则成吴）"
 !define APP_WEB_SITE "https://github.com/W-zc-lang"
 !define APP_EXE "CrabClaw.exe"
