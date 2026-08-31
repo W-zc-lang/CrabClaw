@@ -21,6 +21,7 @@ a = Analysis(
     binaries=[],
     datas=[('index.html', '.'), ('reward.jpg', '.'), ('icon.png', '.'), ('icon.ico', '.'), ('AUTHORS.txt', '.')],
     hiddenimports=[
+        'requests',
         'mss',
         'pyautogui',
         'psutil',
