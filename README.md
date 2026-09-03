@@ -1,4 +1,28 @@
-# 让 Ollama 具备「控制电脑」能力
+# 🦀 CrabClaw · 本地 AI 对话桌面应用
+
+> 让本地 Ollama 具备「控制电脑」能力：文件读写、跑命令、截图看图、键鼠操作，全部在本机完成，**数据不出本机**。
+
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%2F%20macOS-blue)](https://github.com/W-zc-lang/CrabClaw)
+[![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/W-zc-lang/CrabClaw)](https://github.com/W-zc-lang/CrabClaw/releases)
+
+## ✨ 它能做什么
+
+- **本地推理**：接入 Ollama，模型跑在你自己机器上
+- **控制电脑**：文件读写 / 运行命令 / 截图识别 / 键鼠操作
+- **安全闸门**：路径白名单 + 危险操作确认
+- **Agent 循环**：思考 → 调工具 → 看结果 → 再思考，直到完成
+
+## 🚀 下载
+
+👉 **[GitHub Releases 下载 CrabClaw](https://github.com/W-zc-lang/CrabClaw/releases)**
+
+## ☕ 支持
+
+点个 **Star** ⭐ 支持作者。
+
+---
+
 
 ## 一、先搞清楚差距在哪
 
